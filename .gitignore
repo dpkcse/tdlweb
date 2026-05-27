@@ -1,0 +1,9 @@
+wp-content/uploads/*
+!wp-content/uploads/.gitkeep
+# WordPress backup files
+wp-content/updraft/
+*.sql
+*.zip
+*.tar
+*.gz
+*.7z

@@ -1,0 +1,19 @@
+[17-Dec-2025 16:54:52 UTC] PHP Fatal error:  Uncaught Error: Class "MyThemeShop\Helpers\Conditional" not found in /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math-pro/includes/class-modules.php:31
+Stack trace:
+#0 /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math-pro/rank-math-pro.php(238): RankMathPro\Modules->__construct()
+#1 /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math-pro/rank-math-pro.php(121): RankMathPro->instantiate()
+#2 /home/tourgmpn/public_html/wp-includes/class-wp-hook.php(341): RankMathPro->setup()
+#3 /home/tourgmpn/public_html/wp-includes/class-wp-hook.php(365): WP_Hook->apply_filters()
+#4 /home/tourgmpn/public_html/wp-includes/plugin.php(522): WP_Hook->do_action()
+#5 /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math/rank-math.php(188): do_action()
+#6 /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math/rank-math.php(164): RankMath->setup()
+#7 /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math/rank-math.php(542): RankMath::get()
+#8 /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math/rank-math.php(546): rank_math()
+#9 /home/tourgmpn/public_html/wp-settings.php(560): include_once('/home/tourgmpn/...')
+#10 /home/tourgmpn/public_html/wp-config.php(95): require_once('/home/tourgmpn/...')
+#11 /home/tourgmpn/public_html/wp-load.php(50): require_once('/home/tourgmpn/...')
+#12 /home/tourgmpn/public_html/wp-admin/admin.php(35): require_once('/home/tourgmpn/...')
+#13 /home/tourgmpn/public_html/wp-admin/network/admin.php(13): require_once('/home/tourgmpn/...')
+#14 /home/tourgmpn/public_html/wp-admin/network/index.php(11): require_once('/home/tourgmpn/...')
+#15 {main}
+  thrown in /home/tourgmpn/public_html/wp-content/plugins/seo-by-rank-math-pro/includes/class-modules.php on line 31

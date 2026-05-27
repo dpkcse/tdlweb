@@ -1,0 +1,12 @@
+[06-Apr-2026 11:54:25 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function add_action() in /home/tourgmpn/public_html/wp-includes/blocks/latest-posts.php:240
+Stack trace:
+#0 {main}
+  thrown in /home/tourgmpn/public_html/wp-includes/blocks/latest-posts.php on line 240
+[06-Apr-2026 11:54:25 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function add_action() in /home/tourgmpn/public_html/wp-includes/blocks/rss.php:145
+Stack trace:
+#0 {main}
+  thrown in /home/tourgmpn/public_html/wp-includes/blocks/rss.php on line 145
+[06-Apr-2026 11:54:26 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function add_action() in /home/tourgmpn/public_html/wp-includes/blocks/search.php:213
+Stack trace:
+#0 {main}
+  thrown in /home/tourgmpn/public_html/wp-includes/blocks/search.php on line 213

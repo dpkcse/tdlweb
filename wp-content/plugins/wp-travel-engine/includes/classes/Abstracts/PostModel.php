@@ -1,0 +1,403 @@
+<?php
+/**
+ * Data.
+ *
+ * @package WPTravelEngine/Abstracts
+ * @since 6.0.0
+ */
+
+namespace WPTravelEngine\Abstracts;
+
+use InvalidArgumentException;
+use WP_Error;
+use WP_Post;
+use WPTravelEngine\Traits\Factory;
+use WPTravelEngine\Utilities\ArrayUtility;
+
+/**
+ * Abstract class PostModel.
+ *
+ * @package WPTravelEngine/Abstracts
+ */
+abstract class PostModel {
+
+	use Factory;
+
+	/**
+	 * Post data.
+	 *
+	 * @var array
+	 */
+	protected array $data = array(
+		'__changes' => array(),
+	);
+
+	/**
+	 * Post type name.
+	 *
+	 * @var string
+	 */
+	protected string $post_type;
+
+	/**
+	 * Post object.
+	 *
+	 * @var WP_Post
+	 */
+	public WP_Post $post;
+
+	/**
+	 * Post ID.
+	 *
+	 * @var int
+	 */
+	public int $ID;
+
+	/**
+	 * Nested Data.
+	 *
+	 * @since 6.8.0
+	 */
+	protected array $nested_data = array();
+
+	/**
+	 * Depth counter for with_delayed_save() reentrancy. >0 means writes are queued.
+	 *
+	 * @var int
+	 * @since 6.8.0
+	 */
+	private int $hold_save = 0;
+
+	/**
+	 * PostModel Constructor.
+	 *
+	 * @param WP_Post|int $post The post-object.
+	 *
+	 * @throws InvalidArgumentException If the provided $post is not an instance of WP_Post or if the post-type is invalid.
+	 */
+	public function __construct( $post ) {
+		if ( is_numeric( $post ) ) {
+			$post = get_post( $post );
+		}
+
+		if ( ! $post instanceof WP_Post ) {
+			throw new InvalidArgumentException( 'Invalid post object' );
+		}
+
+		if ( $post->post_type !== $this->post_type ) {
+			throw new InvalidArgumentException( 'Invalid post type' );
+		}
+
+		$this->ID = $post->ID;
+
+		$this->post = $post;
+	}
+
+	/**
+	 * Get the post-ID.
+	 *
+	 * This method is not abstract and can be used directly in child classes
+	 *
+	 * @return int The post-ID.
+	 */
+	public function get_id(): int {
+		return $this->post->ID;
+	}
+
+	/**
+	 * Get the post-title.
+	 *
+	 * This method is not abstract and can be used directly in child classes.
+	 *
+	 * @return string The post-title
+	 */
+	public function get_title(): string {
+		return get_the_title( $this->post );
+	}
+
+	/**
+	 * Get the post permalink.
+	 *
+	 * This method is not abstract and can be used directly in child classes.
+	 *
+	 * @return string The post-permalink.
+	 */
+	public function get_permalink(): string {
+		return get_permalink( $this->post );
+	}
+
+	/**
+	 * Get the post-content.
+	 *
+	 * This method is not abstract and can be used directly in child classes.
+	 *
+	 * @return string The post-content
+	 */
+	public function get_content(): string {
+		return get_the_content( null, false, $this->post );
+	}
+
+	/**
+	 * Get the post-excerpt.
+	 *
+	 * This method is not abstract and can be used directly in child classes.
+	 *
+	 * @return string The post-excerpt.
+	 */
+	public function get_excerpt(): string {
+		return get_the_excerpt( $this->ID );
+	}
+
+	/**
+	 * Get a specific post-meta value
+	 *
+	 * This method is abstract and must be implemented in child classes.
+	 * Child classes should define the specific meta-keys they use.
+	 *
+	 * @param string $meta_key The meta-key.
+	 *
+	 * @return mixed The meta-value or null if not found.
+	 */
+	public function get_meta( string $meta_key ) {
+		if ( isset( $this->data[ $meta_key ] ) ) {
+			return $this->data[ $meta_key ];
+		}
+
+		$this->data[ $meta_key ] = get_post_meta( $this->post->ID, $meta_key, true );
+
+		return $this->data[ $meta_key ];
+	}
+
+	/**
+	 * @param string $meta_key
+	 *
+	 * @return mixed
+	 * @since 6.4.0
+	 */
+	public function has_meta( string $meta_key ): bool {
+		return metadata_exists( 'post', $this->ID, $meta_key );
+	}
+
+	/**
+	 * @param $meta_key
+	 * @param $meta_value
+	 *
+	 * @return $this
+	 */
+	public function set_meta( $meta_key, $meta_value ): PostModel {
+		$this->data['__changes'][ $meta_key ] = $meta_value;
+
+		return $this;
+	}
+
+	/**
+	 * Update the post-metadata.
+	 *
+	 * @return PostModel|bool|int
+	 * @since 6.8.0 Queues write to __changes when delayed save is active.
+	 */
+	public function update_meta( $meta_key, $meta_value ) {
+		if ( $this->hold_save > 0 ) {
+			return $this->set_meta( $meta_key, $meta_value );
+		}
+
+		/**
+		 * @since 6.3.3 Filter for meta_value before updating.
+		 */
+		$meta_value = apply_filters( 'wptravelengine_update_post_meta', $meta_value, $meta_key, $this );
+
+		return update_post_meta( $this->ID, $meta_key, $meta_value );
+	}
+
+	/**
+	 * Deletes metadata from a post.
+	 *
+	 * @param string $meta_key Metadata name.
+	 * @param mixed  $meta_value Optional. Metadata value. If provided,
+	 *                            rows will only be removed that match the value.
+	 *                            Must be serializable if non-scalar. Default empty.
+	 *
+	 * @return bool True on success, false on failure.
+	 * @since 6.1.2
+	 */
+	public function delete_meta( string $meta_key, $meta_value = '' ): bool {
+		return delete_post_meta( $this->ID, $meta_key, $meta_value );
+	}
+
+	/**
+	 * Save the post-metadata.
+	 * This method saves all the changes made to the post-metadata.
+	 *
+	 * @return object
+	 */
+	public function save(): object {
+		foreach ( $this->data['__changes'] as $meta_key => $meta_value ) {
+			$this->update_meta( $meta_key, $meta_value );
+			if ( $this->hold_save === 0 ) {
+				unset( $this->data[ $meta_key ] );
+			}
+		}
+		if ( $this->hold_save === 0 ) {
+			$this->data['__changes'] = array();
+		}
+
+		return $this;
+	}
+
+	/**
+	 * Executes $callback with all meta writes queued in memory,
+	 * then flushes everything to the database in one save() call.
+	 *
+	 * @param callable $callback Receives $this as first argument.
+	 * @return object
+	 * @since 6.8.0
+	 */
+	public function with_delayed_save( callable $callback ): object {
+		++$this->hold_save;
+		try {
+			$callback( $this );
+		} finally {
+			--$this->hold_save;
+		}
+		if ( $this->hold_save === 0 ) {
+			return $this->save();
+		}
+		return $this;
+	}
+
+	/**
+	 * Get all post-metadata.
+	 *
+	 * This method is not abstract and can be used directly in child classes.
+	 *
+	 * @return array An associative array of all post meta data.
+	 */
+	public function get_all_meta(): array {
+		return get_post_meta( $this->post->ID );
+	}
+
+	/**
+	 * Get the post-type.
+	 *
+	 * @return string|null
+	 */
+	public function get_post_type(): string {
+		return $this->post_type;
+	}
+
+	/**
+	 * Create a new post for this post-type.
+	 *
+	 * @return $this The new post ID on success. The value 0 or WP_Error on failure.
+	 */
+	public static function create_post( array $postarr ): PostModel {
+		return new static( wp_insert_post( $postarr ) );
+	}
+
+	/**
+	 * Update the post-title.
+	 *
+	 * This method is abstract and must be implemented in child classes.
+	 *
+	 * @param array $postarr The post-data.
+	 *
+	 * @return int|WP_Error The post-ID on success. The value 0 or WP_Error on failure.
+	 */
+	public function update_post( array $postarr ) {
+		$postarr['ID'] = $this->ID;
+
+		return wp_update_post( $postarr );
+	}
+
+	/**
+	 * Syncs metas to the post.
+	 *
+	 * @param array<mixed> $metadata Key-value pairs of metadata to be synced.
+	 *
+	 * @return void
+	 * @since 6.7.0
+	 */
+	public function sync_metas( array $metadata = array() ) {
+		if ( empty( $metadata ) ) {
+			return;
+		}
+
+		foreach ( $metadata as $key => $value ) {
+			update_post_meta( $this->ID, $key, $value );
+		}
+	}
+
+	/**
+	 * Has changes.
+	 *
+	 * @since 6.8.0
+	 */
+	public function has_changes(): bool {
+		return ! empty( $this->data['__changes'] );
+	}
+
+	/**
+	 * Get changes.
+	 *
+	 * @since 6.8.0
+	 */
+	public function get_changes(): array {
+		return $this->data['__changes'] ?? array();
+	}
+
+	/**
+	 * Specially designed for array type meta values. It allows setting nested meta values using dot notation.
+	 *
+	 * @param string $meta_key Dot seperated key for nested meta value. E.g. "parent_key.child_key".
+	 * @param mixed  $meta_value The value to be set for the specified meta key.
+	 * @param bool   $force Whether to override the existing value if the meta key already exists. Default is true.
+	 *
+	 * @return $this
+	 * @since 6.8.0
+	 */
+	public function set_nested_meta( string $meta_key, $meta_value, bool $force = true ): PostModel {
+		$meta_key_arr = explode( '.', $meta_key );
+		$first_key    = array_shift( $meta_key_arr );
+
+		if ( ! $force && null !== $this->get_nested_meta( $meta_key ) ) {
+			return $this;
+		}
+
+		if ( ! isset( $this->nested_data[ $first_key ] ) ) {
+			$value                           = $this->get_meta( $first_key );
+			$this->nested_data[ $first_key ] = ArrayUtility::make( is_array( $value ) ? $value : array() );
+		}
+
+		/** @var ArrayUtility $nested_data */
+		$nested_data = $this->nested_data[ $first_key ];
+
+		$nested_data->set( implode( '.', $meta_key_arr ), $meta_value );
+
+		return $this->set_meta( $first_key, $nested_data->value() );
+	}
+
+	/**
+	 * Specially designed for array type meta values. It allows getting nested meta values using dot notation.
+	 *
+	 * @param string $meta_key Dot seperated key for nested meta value. E.g. "parent_key.child_key".
+	 * @param mixed  $default The default value to be returned if the specified meta key is not found.
+	 *
+	 * @return mixed The value of the specified meta key or the default value if the meta key is not found.
+	 * @since 6.8.0
+	 */
+	public function get_nested_meta( string $meta_key, $default = null ) {
+		$meta_key_arr = explode( '.', $meta_key );
+		$first_key    = array_shift( $meta_key_arr );
+
+		$value = $this->get_meta( $first_key );
+
+		if ( ! is_array( $value ) ) {
+			return $default;
+		}
+
+		/** @var ArrayUtility $array_value */
+		$array_value = ArrayUtility::make( $value );
+
+		return empty( $meta_key_arr ) ? $array_value->value() : $array_value->get( implode( '.', $meta_key_arr ), $default );
+	}
+}
