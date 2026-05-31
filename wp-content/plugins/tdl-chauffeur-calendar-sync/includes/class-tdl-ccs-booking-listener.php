@@ -14,10 +14,9 @@ class TDL_CCS_Booking_Listener {
 	}
 
 	public function init() {
-		add_action( 'save_post', array( $this, 'save_post' ), 20, 3 );
+		add_action( 'save_post_' . $this->mapper->get_booking_cpt(), array( $this, 'save_post' ), 20, 3 );
 		add_action( 'wp_after_insert_post', array( $this, 'after_insert_post' ), 20, 4 );
 		add_action( 'transition_post_status', array( $this, 'transition_post_status' ), 20, 3 );
-		add_action( 'chbs_after_booking_sent', array( $this, 'chauffeur_after_booking_sent' ), 20, 1 );
 		add_action( 'shutdown', array( $this, 'process_shutdown_queue' ) );
 		add_action( 'tdl_ccs_sync_booking_event', array( $this, 'cron_sync_booking' ), 10, 1 );
 		add_filter( 'post_row_actions', array( $this, 'booking_row_action' ), 10, 2 );
@@ -41,14 +40,13 @@ class TDL_CCS_Booking_Listener {
 		}
 	}
 
-	public function chauffeur_after_booking_sent( $booking_id ) {
-		$post = get_post( $booking_id );
-		$this->maybe_queue( $booking_id, $post, 'chbs_after_booking_sent' );
-	}
-
 	public function process_shutdown_queue() {
 		foreach ( array_unique( array_map( 'absint', $this->queued ) ) as $booking_id ) {
-			if ( ! get_post_meta( $booking_id, TDL_CCS_EVENT_ID_META, true ) ) {
+			if ( get_post_meta( $booking_id, TDL_CCS_EVENT_ID_META, true ) ) {
+				$this->logger->log( 'duplicate_skipped', 'info', 'Existing Google Calendar event ID found before cron scheduling; sync skipped.', $booking_id );
+				continue;
+			}
+			if ( ! wp_next_scheduled( 'tdl_ccs_sync_booking_event', array( $booking_id ) ) ) {
 				wp_schedule_single_event( time() + 30, 'tdl_ccs_sync_booking_event', array( $booking_id ) );
 			}
 		}
@@ -59,7 +57,10 @@ class TDL_CCS_Booking_Listener {
 	private function maybe_queue( $post_id, $post, $source ) {
 		if ( wp_is_post_autosave( $post_id ) || wp_is_post_revision( $post_id ) || ! $post || 'trash' === $post->post_status ) { return; }
 		if ( $post->post_type !== $this->mapper->get_booking_cpt() ) { return; }
-		if ( get_post_meta( $post_id, TDL_CCS_EVENT_ID_META, true ) ) { return; }
+		if ( get_post_meta( $post_id, TDL_CCS_EVENT_ID_META, true ) ) {
+			$this->logger->log( 'duplicate_skipped', 'info', 'Existing Google Calendar event ID found; sync skipped.', $post_id );
+			return;
+		}
 		$this->queued[] = absint( $post_id );
 		$this->logger->log( 'booking_detected', 'success', 'Booking detected by ' . sanitize_key( $source ) . '.', $post_id );
 	}

@@ -9,7 +9,10 @@ class TDL_CCS_Admin {
 	private $notices = array();
 
 	public function __construct( TDL_CCS_Google_Auth $auth, TDL_CCS_Calendar $calendar, TDL_CCS_Booking_Mapper $mapper, TDL_CCS_Logger $logger ) {
-		$this->auth = $auth; $this->calendar = $calendar; $this->mapper = $mapper; $this->logger = $logger;
+		$this->auth = $auth;
+		$this->calendar = $calendar;
+		$this->mapper = $mapper;
+		$this->logger = $logger;
 	}
 
 	public function init() {
@@ -28,9 +31,25 @@ class TDL_CCS_Admin {
 	}
 
 	public function admin_notices() {
-		if ( current_user_can( 'manage_options' ) && ! $this->mapper->is_chauffeur_active() ) {
+		if ( ! current_user_can( 'manage_options' ) ) { return; }
+
+		if ( ! $this->auth->has_credentials() ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $this->auth->get_missing_credentials_message() ) . '</p></div>';
+		}
+
+		if ( $this->auth->is_connected() && $this->auth->is_token_expired() ) {
+			echo '<div class="notice notice-warning"><p>' . esc_html__( 'TDL Chauffeur Calendar Sync Google access token is expired. The plugin will try to refresh it automatically; reconnect Google if refresh fails.', 'tdl-chauffeur-calendar-sync' ) . '</p></div>';
+		}
+
+		$refresh_error = get_transient( 'tdl_ccs_google_refresh_error' );
+		if ( $refresh_error ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $refresh_error ) . '</p></div>';
+		}
+
+		if ( ! $this->mapper->is_chauffeur_active() ) {
 			echo '<div class="notice notice-warning"><p>' . esc_html__( 'TDL Chauffeur Calendar Sync is active, but Chauffeur Booking System does not appear to be active. Sync will wait until bookings are available.', 'tdl-chauffeur-calendar-sync' ) . '</p></div>';
 		}
+
 		foreach ( $this->notices as $notice ) {
 			echo '<div class="notice notice-' . esc_attr( $notice['type'] ) . ' is-dismissible"><p>' . esc_html( $notice['message'] ) . '</p></div>';
 		}
@@ -38,6 +57,7 @@ class TDL_CCS_Admin {
 
 	public function handle_actions() {
 		if ( ! current_user_can( 'manage_options' ) || empty( $_GET['page'] ) || 'tdl-chauffeur-calendar-sync' !== $_GET['page'] ) { return; }
+
 		$oauth = $this->auth->handle_oauth_callback();
 		if ( true === $oauth ) { $this->notices[] = array( 'type' => 'success', 'message' => __( 'Google account connected.', 'tdl-chauffeur-calendar-sync' ) ); }
 		if ( is_wp_error( $oauth ) ) { $this->notices[] = array( 'type' => 'error', 'message' => $oauth->get_error_message() ); }
@@ -45,8 +65,8 @@ class TDL_CCS_Admin {
 		if ( empty( $_POST['tdl_ccs_action'] ) ) { return; }
 		check_admin_referer( 'tdl_ccs_admin_action', 'tdl_ccs_nonce' );
 		$action = sanitize_key( wp_unslash( $_POST['tdl_ccs_action'] ) );
+
 		switch ( $action ) {
-			case 'save_google': $this->save_google_settings(); break;
 			case 'save_calendar': $this->save_calendar_settings(); break;
 			case 'save_email': $this->save_email_settings(); break;
 			case 'disconnect': $this->auth->disconnect(); $this->notices[] = array( 'type' => 'success', 'message' => __( 'Google disconnected.', 'tdl-chauffeur-calendar-sync' ) ); break;
@@ -56,15 +76,6 @@ class TDL_CCS_Admin {
 			case 'manual_sync': $this->manual_sync(); break;
 			case 'clear_logs': $this->logger->clear(); $this->notices[] = array( 'type' => 'success', 'message' => __( 'Logs cleared.', 'tdl-chauffeur-calendar-sync' ) ); break;
 		}
-	}
-
-	private function save_google_settings() {
-		$settings = TDL_CCS_Plugin::get_settings();
-		$settings['google_client_id'] = sanitize_text_field( wp_unslash( $_POST['google_client_id'] ?? '' ) );
-		$secret = sanitize_text_field( wp_unslash( $_POST['google_client_secret'] ?? '' ) );
-		if ( '' !== $secret ) { $settings['google_client_secret'] = $secret; }
-		TDL_CCS_Plugin::update_settings( $settings );
-		$this->notices[] = array( 'type' => 'success', 'message' => __( 'Google settings saved.', 'tdl-chauffeur-calendar-sync' ) );
 	}
 
 	private function save_calendar_settings() {
@@ -119,24 +130,35 @@ class TDL_CCS_Admin {
 	}
 
 	private function form_open( $action ) { echo '<form method="post">'; wp_nonce_field( 'tdl_ccs_admin_action', 'tdl_ccs_nonce' ); echo '<input type="hidden" name="tdl_ccs_action" value="' . esc_attr( $action ) . '">'; }
-	private function submit_button( $label ) { submit_button( $label ); echo '</form>'; }
+	private function submit_button( $label, $type = 'primary' ) { submit_button( $label, $type ); echo '</form>'; }
 
 	private function render_google_tab() {
-		$settings = TDL_CCS_Plugin::get_settings();
-		$this->form_open( 'save_google' );
-		echo '<table class="form-table"><tr><th>Google Client ID</th><td><input class="regular-text" name="google_client_id" value="' . esc_attr( $settings['google_client_id'] ) . '"></td></tr>';
-		echo '<tr><th>Google Client Secret</th><td><input class="regular-text" type="password" name="google_client_secret" value="" placeholder="' . esc_attr__( 'Leave blank to keep existing secret', 'tdl-chauffeur-calendar-sync' ) . '"></td></tr>';
-		echo '<tr><th>Redirect URI</th><td><code>' . esc_html( $this->auth->get_redirect_uri() ) . '</code></td></tr>';
-		echo '<tr><th>Connection status</th><td>' . esc_html( $this->auth->is_connected() ? __( 'Connected', 'tdl-chauffeur-calendar-sync' ) : __( 'Not connected', 'tdl-chauffeur-calendar-sync' ) ) . '<br>' . esc_html( $this->auth->get_account_email() ) . '</td></tr></table>';
-		$this->submit_button( __( 'Save Google Settings', 'tdl-chauffeur-calendar-sync' ) );
-		if ( ! empty( $settings['google_client_id'] ) && ! empty( $settings['google_client_secret'] ) ) { echo '<p><a class="button button-primary" href="' . esc_url( $this->auth->get_auth_url() ) . '">' . esc_html__( 'Connect Google', 'tdl-chauffeur-calendar-sync' ) . '</a></p>'; }
-		$this->form_open( 'disconnect' ); $this->submit_button( __( 'Disconnect Google', 'tdl-chauffeur-calendar-sync' ) );
+		$auth_url = $this->auth->get_auth_url();
+		$status = $this->auth->is_connected() ? __( 'Connected', 'tdl-chauffeur-calendar-sync' ) : __( 'Not connected', 'tdl-chauffeur-calendar-sync' );
+		$email = $this->auth->get_account_email();
+		$login_label = ( $this->auth->is_connected() && $this->auth->is_token_expired() ) ? __( 'Reconnect Google', 'tdl-chauffeur-calendar-sync' ) : __( 'Login with Google', 'tdl-chauffeur-calendar-sync' );
+
+		echo '<table class="form-table">';
+		echo '<tr><th>' . esc_html__( 'Status', 'tdl-chauffeur-calendar-sync' ) . '</th><td>' . esc_html( $status ) . '</td></tr>';
+		echo '<tr><th>' . esc_html__( 'Connected Google Account', 'tdl-chauffeur-calendar-sync' ) . '</th><td>' . ( $email ? esc_html( $email ) : '&mdash;' ) . '</td></tr>';
+		echo '<tr><th>' . esc_html__( 'Redirect URI', 'tdl-chauffeur-calendar-sync' ) . '</th><td><input class="large-text code" type="text" readonly value="' . esc_attr( $this->auth->get_redirect_uri() ) . '"><p class="description">' . esc_html__( 'Add this exact URI to your Google Cloud Console OAuth client.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr>';
+		echo '</table>';
+
+		if ( is_wp_error( $auth_url ) ) {
+			echo '<p><button type="button" class="button button-primary" disabled>' . esc_html( $login_label ) . '</button></p>';
+			echo '<p class="description">' . esc_html( $auth_url->get_error_message() ) . '</p>';
+		} else {
+			echo '<p><a class="button button-primary" href="' . esc_url( $auth_url ) . '">' . esc_html( $login_label ) . '</a></p>';
+		}
+
+		$this->form_open( 'disconnect' ); $this->submit_button( __( 'Disconnect Google', 'tdl-chauffeur-calendar-sync' ), 'secondary' );
+		$this->form_open( 'test_connection' ); $this->submit_button( __( 'Test Calendar Connection', 'tdl-chauffeur-calendar-sync' ), 'secondary' );
 	}
 
 	private function render_calendar_tab() {
 		$s = TDL_CCS_Plugin::get_settings(); $this->form_open( 'save_calendar' );
 		echo '<table class="form-table"><tr><th>Enable calendar sync</th><td><label><input type="checkbox" name="enabled" value="1" ' . checked( $s['enabled'], '1', false ) . '> Enable</label></td></tr>';
-		echo '<tr><th>Calendar ID</th><td><input class="regular-text" name="calendar_id" value="' . esc_attr( $s['calendar_id'] ) . '"></td></tr>';
+		echo '<tr><th>Calendar ID</th><td><input class="regular-text" name="calendar_id" value="' . esc_attr( $s['calendar_id'] ) . '"><p class="description">' . esc_html__( 'Default is primary. Only change this if you want to sync to a specific Google Calendar.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr>';
 		echo '<tr><th>Default event duration</th><td><input type="number" min="1" name="default_duration" value="' . esc_attr( $s['default_duration'] ) . '"> minutes</td></tr>';
 		echo '<tr><th>Event title template</th><td><input class="large-text" name="title_template" value="' . esc_attr( $s['title_template'] ) . '"></td></tr>';
 		echo '<tr><th>Event description template</th><td><textarea class="large-text" rows="10" name="description_template">' . esc_textarea( $s['description_template'] ) . '</textarea></td></tr>';
@@ -150,6 +172,7 @@ class TDL_CCS_Admin {
 		foreach ( array( 'email_to' => 'Recipient emails', 'email_cc' => 'CC', 'email_bcc' => 'BCC', 'email_subject_template' => 'Subject template' ) as $key => $label ) { echo '<tr><th>' . esc_html( $label ) . '</th><td><input class="large-text" name="' . esc_attr( $key ) . '" value="' . esc_attr( $s[ $key ] ) . '"></td></tr>'; }
 		echo '<tr><th>HTML body template</th><td><textarea class="large-text" rows="8" name="email_body_template">' . esc_textarea( $s['email_body_template'] ) . '</textarea></td></tr></table>';
 		$this->submit_button( __( 'Save Email Settings', 'tdl-chauffeur-calendar-sync' ) );
+		$this->form_open( 'test_email' ); $this->submit_button( __( 'Send Test Email', 'tdl-chauffeur-calendar-sync' ), 'secondary' );
 	}
 
 	private function render_logs_tab() {
@@ -159,7 +182,7 @@ class TDL_CCS_Admin {
 	}
 
 	private function render_tools_tab() {
-		foreach ( array( 'test_connection' => 'Test Google Connection', 'test_event' => 'Create Test Calendar Event', 'test_email' => 'Send Test Email' ) as $action => $label ) { $this->form_open( $action ); submit_button( $label, 'secondary' ); echo '</form>'; }
+		foreach ( array( 'test_connection' => 'Test Google Connection', 'test_event' => 'Create Test Calendar Event' ) as $action => $label ) { $this->form_open( $action ); submit_button( $label, 'secondary' ); echo '</form>'; }
 		$this->form_open( 'manual_sync' ); echo '<h2>' . esc_html__( 'Manual sync by Booking ID', 'tdl-chauffeur-calendar-sync' ) . '</h2><p><input type="number" min="1" name="booking_id" placeholder="Booking ID"> '; submit_button( __( 'Sync / Resync Booking', 'tdl-chauffeur-calendar-sync' ), 'primary', 'submit', false ); echo '</p></form>';
 	}
 }

@@ -15,7 +15,10 @@ class TDL_CCS_Calendar {
 	public function sync_booking( $booking_id, $force = false ) {
 		$settings = TDL_CCS_Plugin::get_settings();
 		if ( '1' !== (string) $settings['enabled'] && ! $force ) { return new WP_Error( 'tdl_ccs_disabled', __( 'Calendar sync is disabled.', 'tdl-chauffeur-calendar-sync' ) ); }
-		if ( get_post_meta( $booking_id, TDL_CCS_EVENT_ID_META, true ) && ! $force ) { return true; }
+		if ( get_post_meta( $booking_id, TDL_CCS_EVENT_ID_META, true ) ) {
+			$this->logger->log( 'duplicate_skipped', 'info', 'Existing Google Calendar event ID found; sync skipped.', $booking_id );
+			return true;
+		}
 		$data = $this->mapper->map( $booking_id );
 		if ( is_wp_error( $data ) ) { return $data; }
 		$event = $this->build_event( $data, $settings );

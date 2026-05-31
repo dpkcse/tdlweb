@@ -35,8 +35,6 @@ class TDL_CCS_Plugin {
 			'email_bcc' => '',
 			'email_subject_template' => 'New Chauffeur Booking Synced #{booking_id}',
 			'email_body_template' => self::default_email_template(),
-			'google_client_id' => '',
-			'google_client_secret' => '',
 		);
 	}
 

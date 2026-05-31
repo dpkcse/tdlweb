@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TDL Chauffeur Calendar Sync
  * Description: Companion plugin that syncs Chauffeur Booking System bookings to Google Calendar.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: TDL
  * Requires PHP: 7.4
  * Text Domain: tdl-chauffeur-calendar-sync
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TDL_CCS_VERSION', '1.0.0' );
+define( 'TDL_CCS_VERSION', '1.0.1' );
 define( 'TDL_CCS_FILE', __FILE__ );
 define( 'TDL_CCS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TDL_CCS_URL', plugin_dir_url( __FILE__ ) );
