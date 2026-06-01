@@ -2,8 +2,6 @@
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
 class TDL_CCS_Google_Auth {
-	const REDIRECT_URI = 'https://tourdelisboa.com/wp-admin/admin.php?page=tdl-chauffeur-calendar-sync&tdl_ccs_google_callback=1';
-
 	private $logger;
 	private $scopes = array( 'https://www.googleapis.com/auth/calendar.events', 'openid', 'email', 'profile' );
 
@@ -34,7 +32,13 @@ class TDL_CCS_Google_Auth {
 	}
 
 	public function get_redirect_uri() {
-		return self::REDIRECT_URI;
+		return add_query_arg(
+			array(
+				'page' => 'tdl-chauffeur-calendar-sync',
+				'tdl_ccs_google_callback' => '1',
+			),
+			admin_url( 'admin.php' )
+		);
 	}
 
 	public function get_auth_url() {
