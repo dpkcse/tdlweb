@@ -212,7 +212,7 @@ class TDL_CCS_Google_Auth {
 		$code = wp_remote_retrieve_response_code( $response );
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
 		if ( $code < 200 || $code >= 300 || ! is_array( $body ) || empty( $body['access_token'] ) ) {
-			$message = is_array( $body ) && ! empty( $body['error_description'] ) ? sanitize_text_field( $body['error_description'] ) : __( 'Google token exchange failed.', 'tdl-chauffeur-calendar-sync' );
+			$message = $this->google_token_error_message( $body, $code );
 			return new WP_Error( 'tdl_ccs_token_failed', $message );
 		}
 		$old = $this->get_tokens();
@@ -225,6 +225,26 @@ class TDL_CCS_Google_Auth {
 		update_option( TDL_CCS_OPTION_TOKENS, $tokens, false );
 		$this->hydrate_account_email();
 		return true;
+	}
+
+	private function google_token_error_message( $body, $code = 0 ) {
+		$message = __( 'Google token exchange failed.', 'tdl-chauffeur-calendar-sync' );
+
+		if ( is_array( $body ) ) {
+			if ( ! empty( $body['error_description'] ) ) {
+				$message = $body['error_description'];
+			} elseif ( ! empty( $body['error']['message'] ) ) {
+				$message = $body['error']['message'];
+			} elseif ( ! empty( $body['error'] ) && is_string( $body['error'] ) ) {
+				$message = $body['error'];
+			}
+		}
+
+		if ( $code ) {
+			$message .= ' (HTTP ' . absint( $code ) . ')';
+		}
+
+		return sanitize_text_field( $message );
 	}
 
 	public function hydrate_account_email() {

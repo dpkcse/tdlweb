@@ -38,6 +38,7 @@ class TDL_CCS_Plugin {
 			'google_client_id' => '',
 			'google_client_secret' => '',
 			'google_redirect_uri' => '',
+			'timezone' => self::default_timezone(),
 		);
 	}
 
@@ -71,6 +72,18 @@ class TDL_CCS_Plugin {
 
 	private static function sanitize_settings( $settings ) {
 		$settings = is_array( $settings ) ? $settings : array();
-		return wp_parse_args( $settings, self::default_settings() );
+		$settings = wp_parse_args( $settings, self::default_settings() );
+		$settings['timezone'] = self::sanitize_timezone( $settings['timezone'] );
+		return $settings;
+	}
+
+	private static function default_timezone() {
+		$timezone = wp_timezone_string();
+		return $timezone && 'UTC' !== $timezone ? $timezone : 'Europe/Lisbon';
+	}
+
+	public static function sanitize_timezone( $timezone ) {
+		$timezone = sanitize_text_field( (string) $timezone );
+		return in_array( $timezone, timezone_identifiers_list(), true ) ? $timezone : self::default_timezone();
 	}
 }

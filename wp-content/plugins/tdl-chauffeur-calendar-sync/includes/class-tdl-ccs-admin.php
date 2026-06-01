@@ -123,6 +123,7 @@ class TDL_CCS_Admin {
 		$settings['default_duration'] = max( 1, absint( $_POST['default_duration'] ?? 60 ) );
 		$settings['title_template'] = sanitize_text_field( wp_unslash( $_POST['title_template'] ?? '' ) );
 		$settings['description_template'] = sanitize_textarea_field( wp_unslash( $_POST['description_template'] ?? '' ) );
+		$settings['timezone'] = TDL_CCS_Plugin::sanitize_timezone( wp_unslash( $_POST['timezone'] ?? '' ) );
 		TDL_CCS_Plugin::update_settings( $settings );
 		$this->notices[] = array( 'type' => 'success', 'message' => __( 'Calendar settings saved.', 'tdl-chauffeur-calendar-sync' ) );
 	}
@@ -212,7 +213,11 @@ class TDL_CCS_Admin {
 		echo '<tr><th>Default event duration</th><td><input type="number" min="1" name="default_duration" value="' . esc_attr( $s['default_duration'] ) . '"> minutes</td></tr>';
 		echo '<tr><th>Event title template</th><td><input class="large-text" name="title_template" value="' . esc_attr( $s['title_template'] ) . '"></td></tr>';
 		echo '<tr><th>Event description template</th><td><textarea class="large-text" rows="10" name="description_template">' . esc_textarea( $s['description_template'] ) . '</textarea></td></tr>';
-		echo '<tr><th>Timezone</th><td>' . esc_html( wp_timezone_string() ) . '</td></tr></table>';
+		echo '<tr><th>Event timezone</th><td><select name="timezone">';
+		foreach ( timezone_identifiers_list() as $timezone ) {
+			echo '<option value="' . esc_attr( $timezone ) . '" ' . selected( $s['timezone'], $timezone, false ) . '>' . esc_html( $timezone ) . '</option>';
+		}
+		echo '</select><p class="description">' . esc_html__( 'Use Europe/Lisbon for Portugal bookings. This keeps the Chauffeur pickup time as the visible Google Calendar time.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr></table>';
 		$this->submit_button( __( 'Save Calendar Settings', 'tdl-chauffeur-calendar-sync' ) );
 	}
 

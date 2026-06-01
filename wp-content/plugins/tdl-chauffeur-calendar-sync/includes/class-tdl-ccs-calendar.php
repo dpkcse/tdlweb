@@ -42,16 +42,35 @@ class TDL_CCS_Calendar {
 	public function test_connection() {
 		$token = $this->auth->get_access_token();
 		if ( is_wp_error( $token ) ) { return $token; }
-		$response = wp_remote_get( 'https://www.googleapis.com/calendar/v3/users/me/calendarList', array( 'headers' => array( 'Authorization' => 'Bearer ' . $token ), 'timeout' => 15 ) );
+
+		$settings = TDL_CCS_Plugin::get_settings();
+		$calendar_id = ! empty( $settings['calendar_id'] ) ? $settings['calendar_id'] : 'primary';
+		$url = add_query_arg(
+			array(
+				'maxResults' => 1,
+				'singleEvents' => 'false',
+			),
+			'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode( $calendar_id ) . '/events'
+		);
+		$response = wp_remote_get( $url, array( 'headers' => array( 'Authorization' => 'Bearer ' . $token ), 'timeout' => 15 ) );
 		if ( is_wp_error( $response ) ) { return $response; }
+
 		$code = wp_remote_retrieve_response_code( $response );
-		return ( $code >= 200 && $code < 300 ) ? true : new WP_Error( 'tdl_ccs_google_test_failed', __( 'Google Calendar connection test failed.', 'tdl-chauffeur-calendar-sync' ) );
+		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( $code >= 200 && $code < 300 ) {
+			$this->logger->log( 'google_connection_test', 'success', 'Google Calendar connection test succeeded.', 0, array( 'calendar_id' => $calendar_id ) );
+			return true;
+		}
+
+		$message = $this->google_error_message( $body, __( 'Google Calendar connection test failed.', 'tdl-chauffeur-calendar-sync' ), $code );
+		$this->logger->log( 'google_connection_test', 'error', $message, 0, array( 'calendar_id' => $calendar_id, 'http_code' => $code ) );
+		return new WP_Error( 'tdl_ccs_google_test_failed', $message );
 	}
 
 	public function create_test_event() {
 		$settings = TDL_CCS_Plugin::get_settings();
-		$timezone = wp_timezone_string();
-		$start = new DateTimeImmutable( 'now', wp_timezone() );
+		$timezone = $this->get_event_timezone( $settings );
+		$start = new DateTimeImmutable( 'now', new DateTimeZone( $timezone ) );
 		$end = $start->modify( '+15 minutes' );
 		$event = array(
 			'summary' => 'TDL Chauffeur Calendar Sync Test Event',
@@ -72,17 +91,48 @@ class TDL_CCS_Calendar {
 		$code = wp_remote_retrieve_response_code( $response );
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
 		if ( $code < 200 || $code >= 300 || ! is_array( $body ) || empty( $body['id'] ) ) {
-			$message = is_array( $body ) && ! empty( $body['error']['message'] ) ? $body['error']['message'] : __( 'Google Calendar API request failed.', 'tdl-chauffeur-calendar-sync' );
+			$message = $this->google_error_message( $body, __( 'Google Calendar API request failed.', 'tdl-chauffeur-calendar-sync' ), $code );
 			return new WP_Error( 'tdl_ccs_event_failed', $message );
 		}
 		return $body;
 	}
 
+	private function google_error_message( $body, $fallback, $code = 0 ) {
+		$message = $fallback;
+		$detail = '';
+
+		if ( is_array( $body ) ) {
+			if ( ! empty( $body['error']['message'] ) ) {
+				$message = $body['error']['message'];
+			} elseif ( ! empty( $body['error_description'] ) ) {
+				$message = $body['error_description'];
+			} elseif ( ! empty( $body['error'] ) && is_string( $body['error'] ) ) {
+				$message = $body['error'];
+			}
+
+			if ( ! empty( $body['error']['status'] ) ) {
+				$detail = $body['error']['status'];
+			} elseif ( ! empty( $body['error']['errors'][0]['reason'] ) ) {
+				$detail = $body['error']['errors'][0]['reason'];
+			}
+		}
+
+		if ( $detail ) {
+			$message .= ' [' . $detail . ']';
+		}
+		if ( $code ) {
+			$message .= ' (HTTP ' . absint( $code ) . ')';
+		}
+
+		return sanitize_text_field( $message );
+	}
+
 	private function build_event( array $data, array $settings ) {
-		$timezone = wp_timezone_string();
-		$start = $this->parse_datetime( $data['pickup_datetime'], $data['pickup_date'], $data['pickup_time'] );
+		$timezone = $this->get_event_timezone( $settings );
+		$timezone_object = new DateTimeZone( $timezone );
+		$start = $this->parse_datetime( $data['pickup_datetime'], $data['pickup_date'], $data['pickup_time'], $timezone_object );
 		if ( ! $start ) { return new WP_Error( 'tdl_ccs_no_start', __( 'Booking pickup date/time is incomplete.', 'tdl-chauffeur-calendar-sync' ) ); }
-		$return = $this->parse_datetime( $data['return_datetime'] ?? '', $data['return_date'], $data['return_time'] );
+		$return = $this->parse_datetime( $data['return_datetime'] ?? '', $data['return_date'], $data['return_time'], $timezone_object );
 		$duration = max( 1, absint( $settings['default_duration'] ) );
 		$end = ( $return && $return > $start ) ? $return : $start->modify( '+' . $duration . ' minutes' );
 		return array(
@@ -94,7 +144,15 @@ class TDL_CCS_Calendar {
 		);
 	}
 
-	private function parse_datetime( $datetime, $date, $time ) {
+	private function get_event_timezone( array $settings ) {
+		if ( ! empty( $settings['timezone'] ) && in_array( $settings['timezone'], timezone_identifiers_list(), true ) ) {
+			return $settings['timezone'];
+		}
+		$timezone = wp_timezone_string();
+		return $timezone && 'UTC' !== $timezone ? $timezone : 'Europe/Lisbon';
+	}
+
+	private function parse_datetime( $datetime, $date, $time, DateTimeZone $timezone ) {
 		$value = trim( (string) $datetime );
 		if ( '' === $value || '0000-00-00 00:00:00' === $value || '00-00-0000 00:00' === $value ) {
 			$value = trim( (string) $date . ' ' . (string) $time );
@@ -102,10 +160,10 @@ class TDL_CCS_Calendar {
 		if ( '' === trim( $value ) || false !== strpos( $value, '00-00-0000' ) || false !== strpos( $value, '0000-00-00' ) ) { return null; }
 		$formats = array( 'Y-m-d H:i:s', 'Y-m-d H:i', 'd-m-Y H:i', 'm/d/Y H:i', 'Y/m/d H:i' );
 		foreach ( $formats as $format ) {
-			$dt = DateTimeImmutable::createFromFormat( $format, $value, wp_timezone() );
+			$dt = DateTimeImmutable::createFromFormat( $format, $value, $timezone );
 			if ( $dt instanceof DateTimeImmutable ) { return $dt; }
 		}
-		try { return new DateTimeImmutable( $value, wp_timezone() ); } catch ( Exception $e ) { return null; }
+		try { return new DateTimeImmutable( $value, $timezone ); } catch ( Exception $e ) { return null; }
 	}
 
 	public function replace_tokens( $template, array $data, array $extra = array() ) {
