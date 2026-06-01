@@ -74,7 +74,7 @@ class TDL_CCS_Google_Auth {
 		}
 
 		$state = wp_create_nonce( 'tdl_ccs_google_oauth' );
-		return add_query_arg(
+		$query = http_build_query(
 			array(
 				'client_id' => $this->get_client_id(),
 				'redirect_uri' => $this->get_redirect_uri(),
@@ -84,12 +84,16 @@ class TDL_CCS_Google_Auth {
 				'prompt' => 'consent',
 				'state' => $state,
 			),
-			'https://accounts.google.com/o/oauth2/v2/auth'
+			'',
+			'&',
+			PHP_QUERY_RFC3986
 		);
+
+		return 'https://accounts.google.com/o/oauth2/v2/auth?' . $query;
 	}
 
 	public function handle_oauth_callback() {
-		if ( empty( $_GET['tdl_ccs_google_callback'] ) ) { return null; }
+		if ( empty( $_GET['tdl_ccs_google_callback'] ) && ( empty( $_GET['code'] ) || empty( $_GET['state'] ) ) ) { return null; }
 
 		$credentials = $this->validate_credentials();
 		if ( is_wp_error( $credentials ) ) {
