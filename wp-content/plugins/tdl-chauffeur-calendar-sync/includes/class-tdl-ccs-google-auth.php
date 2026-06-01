@@ -10,18 +10,26 @@ class TDL_CCS_Google_Auth {
 	public function __construct( TDL_CCS_Logger $logger ) { $this->logger = $logger; }
 
 	public function has_credentials() {
-		return defined( 'TDL_CCS_GOOGLE_CLIENT_ID' ) && defined( 'TDL_CCS_GOOGLE_CLIENT_SECRET' ) && TDL_CCS_GOOGLE_CLIENT_ID && TDL_CCS_GOOGLE_CLIENT_SECRET;
+		return '' !== $this->get_client_id() && '' !== $this->get_client_secret();
 	}
 
 	public function get_missing_credentials_message() {
-		return __( 'Google OAuth credentials are not configured. Please define TDL_CCS_GOOGLE_CLIENT_ID and TDL_CCS_GOOGLE_CLIENT_SECRET in wp-config.php.', 'tdl-chauffeur-calendar-sync' );
+		return __( 'Google OAuth credentials are not configured. Enter Google Client ID and Google Client Secret in the Google Connection tab, or define TDL_CCS_GOOGLE_CLIENT_ID and TDL_CCS_GOOGLE_CLIENT_SECRET in wp-config.php.', 'tdl-chauffeur-calendar-sync' );
 	}
 
 	private function get_client_id() {
+		$settings = TDL_CCS_Plugin::get_settings();
+		if ( ! empty( $settings['google_client_id'] ) ) {
+			return (string) $settings['google_client_id'];
+		}
 		return defined( 'TDL_CCS_GOOGLE_CLIENT_ID' ) ? (string) TDL_CCS_GOOGLE_CLIENT_ID : '';
 	}
 
 	private function get_client_secret() {
+		$settings = TDL_CCS_Plugin::get_settings();
+		if ( ! empty( $settings['google_client_secret'] ) ) {
+			return (string) $settings['google_client_secret'];
+		}
 		return defined( 'TDL_CCS_GOOGLE_CLIENT_SECRET' ) ? (string) TDL_CCS_GOOGLE_CLIENT_SECRET : '';
 	}
 

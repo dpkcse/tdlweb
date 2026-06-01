@@ -35,6 +35,8 @@ class TDL_CCS_Plugin {
 			'email_bcc' => '',
 			'email_subject_template' => 'New Chauffeur Booking Synced #{booking_id}',
 			'email_body_template' => self::default_email_template(),
+			'google_client_id' => '',
+			'google_client_secret' => '',
 		);
 	}
 
@@ -47,8 +49,6 @@ class TDL_CCS_Plugin {
 	}
 
 	public function init() {
-		self::remove_legacy_google_credentials();
-
 		$this->logger = new TDL_CCS_Logger();
 		$this->auth = new TDL_CCS_Google_Auth( $this->logger );
 		$this->mapper = new TDL_CCS_Booking_Mapper( $this->logger );
@@ -70,14 +70,6 @@ class TDL_CCS_Plugin {
 
 	private static function sanitize_settings( $settings ) {
 		$settings = is_array( $settings ) ? $settings : array();
-		unset( $settings['google_client_id'], $settings['google_client_secret'] );
 		return wp_parse_args( $settings, self::default_settings() );
-	}
-
-	private static function remove_legacy_google_credentials() {
-		$settings = get_option( TDL_CCS_OPTION_SETTINGS, array() );
-		if ( is_array( $settings ) && ( array_key_exists( 'google_client_id', $settings ) || array_key_exists( 'google_client_secret', $settings ) ) ) {
-			update_option( TDL_CCS_OPTION_SETTINGS, self::sanitize_settings( $settings ), false );
-		}
 	}
 }
