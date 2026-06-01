@@ -8,7 +8,22 @@ class TDL_CCS_Google_Auth {
 	public function __construct( TDL_CCS_Logger $logger ) { $this->logger = $logger; }
 
 	public function has_credentials() {
-		return '' !== $this->get_client_id() && '' !== $this->get_client_secret();
+		return ! is_wp_error( $this->validate_credentials() );
+	}
+
+	public function validate_credentials() {
+		$client_id = trim( $this->get_client_id() );
+		$client_secret = trim( $this->get_client_secret() );
+
+		if ( '' === $client_id || '' === $client_secret ) {
+			return new WP_Error( 'tdl_ccs_missing_credentials', $this->get_missing_credentials_message() );
+		}
+
+		if ( ! preg_match( '/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/', $client_id ) ) {
+			return new WP_Error( 'tdl_ccs_invalid_client_id', __( 'Google Client ID looks invalid. Use the OAuth 2.0 Web application Client ID from Google Cloud Console; it usually ends with .apps.googleusercontent.com. Do not use an API key, Project ID, email address, or Client Secret in this field.', 'tdl-chauffeur-calendar-sync' ) );
+		}
+
+		return true;
 	}
 
 	public function get_missing_credentials_message() {
@@ -31,7 +46,7 @@ class TDL_CCS_Google_Auth {
 		return defined( 'TDL_CCS_GOOGLE_CLIENT_SECRET' ) ? (string) TDL_CCS_GOOGLE_CLIENT_SECRET : '';
 	}
 
-	public function get_redirect_uri() {
+	public function get_default_redirect_uri() {
 		return add_query_arg(
 			array(
 				'page' => 'tdl-chauffeur-calendar-sync',
@@ -41,9 +56,21 @@ class TDL_CCS_Google_Auth {
 		);
 	}
 
+	public function get_redirect_uri() {
+		$settings = TDL_CCS_Plugin::get_settings();
+		$redirect_uri = trim( (string) ( $settings['google_redirect_uri'] ?? '' ) );
+		$redirect_uri = '' !== $redirect_uri ? $redirect_uri : $this->get_default_redirect_uri();
+		return $this->ensure_callback_arg( $redirect_uri );
+	}
+
+	private function ensure_callback_arg( $redirect_uri ) {
+		return add_query_arg( 'tdl_ccs_google_callback', '1', $redirect_uri );
+	}
+
 	public function get_auth_url() {
-		if ( ! $this->has_credentials() ) {
-			return new WP_Error( 'tdl_ccs_missing_credentials', $this->get_missing_credentials_message() );
+		$credentials = $this->validate_credentials();
+		if ( is_wp_error( $credentials ) ) {
+			return $credentials;
 		}
 
 		$state = wp_create_nonce( 'tdl_ccs_google_oauth' );
@@ -64,9 +91,10 @@ class TDL_CCS_Google_Auth {
 	public function handle_oauth_callback() {
 		if ( empty( $_GET['tdl_ccs_google_callback'] ) ) { return null; }
 
-		if ( ! $this->has_credentials() ) {
-			$this->logger->log( 'google_auth_failed', 'error', 'Google OAuth credentials are missing.' );
-			return new WP_Error( 'tdl_ccs_missing_credentials', $this->get_missing_credentials_message() );
+		$credentials = $this->validate_credentials();
+		if ( is_wp_error( $credentials ) ) {
+			$this->logger->log( 'google_auth_failed', 'error', $credentials->get_error_message() );
+			return $credentials;
 		}
 
 		if ( empty( $_GET['code'] ) || empty( $_GET['state'] ) ) {
@@ -136,10 +164,11 @@ class TDL_CCS_Google_Auth {
 
 	private function refresh_access_token() {
 		$tokens = $this->get_tokens();
-		if ( ! $this->has_credentials() ) {
-			$this->logger->log( 'token_refresh_failed', 'error', 'Google OAuth credentials are missing.' );
-			set_transient( 'tdl_ccs_google_refresh_error', $this->get_missing_credentials_message(), HOUR_IN_SECONDS );
-			return new WP_Error( 'tdl_ccs_missing_credentials', $this->get_missing_credentials_message() );
+		$credentials = $this->validate_credentials();
+		if ( is_wp_error( $credentials ) ) {
+			$this->logger->log( 'token_refresh_failed', 'error', $credentials->get_error_message() );
+			set_transient( 'tdl_ccs_google_refresh_error', $credentials->get_error_message(), HOUR_IN_SECONDS );
+			return $credentials;
 		}
 		if ( empty( $tokens['refresh_token'] ) ) {
 			$message = __( 'Google refresh token is missing. Reconnect Google.', 'tdl-chauffeur-calendar-sync' );

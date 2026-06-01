@@ -37,6 +37,7 @@ class TDL_CCS_Plugin {
 			'email_body_template' => self::default_email_template(),
 			'google_client_id' => '',
 			'google_client_secret' => '',
+			'google_redirect_uri' => '',
 		);
 	}
 

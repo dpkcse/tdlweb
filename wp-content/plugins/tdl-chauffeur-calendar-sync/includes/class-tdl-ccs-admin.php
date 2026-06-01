@@ -33,8 +33,9 @@ class TDL_CCS_Admin {
 	public function admin_notices() {
 		if ( ! current_user_can( 'manage_options' ) ) { return; }
 
-		if ( ! $this->auth->has_credentials() ) {
-			echo '<div class="notice notice-error"><p>' . esc_html( $this->auth->get_missing_credentials_message() ) . '</p></div>';
+		$credentials = $this->auth->validate_credentials();
+		if ( is_wp_error( $credentials ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $credentials->get_error_message() ) . '</p></div>';
 		}
 
 		if ( $this->auth->is_connected() && $this->auth->is_token_expired() ) {
@@ -82,13 +83,37 @@ class TDL_CCS_Admin {
 
 	private function save_google_settings() {
 		$settings = TDL_CCS_Plugin::get_settings();
-		$settings['google_client_id'] = sanitize_text_field( wp_unslash( $_POST['google_client_id'] ?? '' ) );
-		$secret = sanitize_text_field( wp_unslash( $_POST['google_client_secret'] ?? '' ) );
+		$client_id = trim( wp_unslash( $_POST['google_client_id'] ?? '' ) );
+		$secret = trim( wp_unslash( $_POST['google_client_secret'] ?? '' ) );
+		$json_credentials = $this->extract_google_oauth_json_credentials( $client_id );
+		if ( $json_credentials ) {
+			$client_id = $json_credentials['client_id'];
+			$secret = $json_credentials['client_secret'];
+		}
+		$settings['google_client_id'] = sanitize_text_field( $client_id );
+		$settings['google_redirect_uri'] = esc_url_raw( trim( wp_unslash( $_POST['google_redirect_uri'] ?? '' ) ) );
 		if ( '' !== $secret ) {
-			$settings['google_client_secret'] = $secret;
+			$settings['google_client_secret'] = sanitize_text_field( $secret );
 		}
 		TDL_CCS_Plugin::update_settings( $settings );
 		$this->notices[] = array( 'type' => 'success', 'message' => __( 'Google OAuth settings saved.', 'tdl-chauffeur-calendar-sync' ) );
+	}
+
+
+	private function extract_google_oauth_json_credentials( $value ) {
+		$decoded = json_decode( (string) $value, true );
+		if ( ! is_array( $decoded ) ) { return false; }
+		$source = array();
+		if ( ! empty( $decoded['web'] ) && is_array( $decoded['web'] ) ) {
+			$source = $decoded['web'];
+		} elseif ( ! empty( $decoded['installed'] ) && is_array( $decoded['installed'] ) ) {
+			$source = $decoded['installed'];
+		}
+		if ( empty( $source['client_id'] ) || empty( $source['client_secret'] ) ) { return false; }
+		return array(
+			'client_id' => (string) $source['client_id'],
+			'client_secret' => (string) $source['client_secret'],
+		);
 	}
 
 	private function save_calendar_settings() {
@@ -151,15 +176,17 @@ class TDL_CCS_Admin {
 		$status = $this->auth->is_connected() ? __( 'Connected', 'tdl-chauffeur-calendar-sync' ) : __( 'Not connected', 'tdl-chauffeur-calendar-sync' );
 		$email = $this->auth->get_account_email();
 		$login_label = ( $this->auth->is_connected() && $this->auth->is_token_expired() ) ? __( 'Reconnect Google', 'tdl-chauffeur-calendar-sync' ) : __( 'Login with Google', 'tdl-chauffeur-calendar-sync' );
+		$redirect_uri = $this->auth->get_redirect_uri();
+		$default_redirect_uri = $this->auth->get_default_redirect_uri();
 
 		$this->form_open( 'save_google' );
 		echo '<table class="form-table">';
-		echo '<tr><th>' . esc_html__( 'Google Client ID', 'tdl-chauffeur-calendar-sync' ) . '</th><td><input class="regular-text" name="google_client_id" value="' . esc_attr( $settings['google_client_id'] ) . '"><p class="description">' . esc_html__( 'Paste the OAuth 2.0 Client ID from Google Cloud Console.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr>';
-		echo '<tr><th>' . esc_html__( 'Google Client Secret', 'tdl-chauffeur-calendar-sync' ) . '</th><td><input class="regular-text" type="password" name="google_client_secret" value="" placeholder="' . esc_attr__( 'Leave blank to keep existing secret', 'tdl-chauffeur-calendar-sync' ) . '"><p class="description">' . esc_html__( 'Paste the OAuth 2.0 Client Secret. The saved secret is never printed back into the page.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr>';
-		echo '<tr><th>' . esc_html__( 'Redirect URI', 'tdl-chauffeur-calendar-sync' ) . '</th><td><input class="large-text code" type="text" readonly value="' . esc_attr( $this->auth->get_redirect_uri() ) . '"><p class="description">' . esc_html__( 'Copy this exact current-site URI into Google Cloud Console as an Authorized redirect URI. If Google shows redirect_uri_mismatch, this URI was not added exactly.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr>';
+		echo '<tr><th>' . esc_html__( 'Google Client ID', 'tdl-chauffeur-calendar-sync' ) . '</th><td><input class="regular-text" name="google_client_id" value="' . esc_attr( $settings['google_client_id'] ) . '"><p class="description">' . esc_html__( 'Paste the OAuth 2.0 Web application Client ID from Google Cloud Console. It should end with .apps.googleusercontent.com. Do not paste an API key, Project ID, email address, or Client Secret here.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr>';
+		echo '<tr><th>' . esc_html__( 'Google Client Secret', 'tdl-chauffeur-calendar-sync' ) . '</th><td><input class="regular-text" type="password" name="google_client_secret" value="" placeholder="' . esc_attr__( 'Leave blank to keep existing secret', 'tdl-chauffeur-calendar-sync' ) . '"><p class="description">' . esc_html__( 'Paste the matching OAuth 2.0 Client Secret from the same Web application client. The saved secret is never printed back into the page.', 'tdl-chauffeur-calendar-sync' ) . '</p></td></tr>';
+		echo '<tr><th>' . esc_html__( 'Redirect URI', 'tdl-chauffeur-calendar-sync' ) . '</th><td><input class="large-text code" type="url" name="google_redirect_uri" value="' . esc_attr( $redirect_uri ) . '"><p class="description">' . esc_html__( 'Copy this exact URI into Google Cloud Console as an Authorized redirect URI. The plugin always includes tdl_ccs_google_callback=1 in the OAuth request; if Google error details show this parameter missing, save this full URI again. Generated default:', 'tdl-chauffeur-calendar-sync' ) . ' <code>' . esc_html( $default_redirect_uri ) . '</code></p></td></tr>';
 		echo '</table>';
 		echo '<div class="tdl-ccs-guide"><h2>' . esc_html__( 'How to get Google Client ID and Client Secret', 'tdl-chauffeur-calendar-sync' ) . '</h2>';
-		echo '<ol><li>' . esc_html__( 'Go to Google Cloud Console: https://console.cloud.google.com/', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Create or select a project.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Enable the Google Calendar API for that project.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Open APIs & Services > OAuth consent screen and configure/publish the consent screen.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Open APIs & Services > Credentials > Create Credentials > OAuth client ID.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Choose Web application, add the exact Redirect URI shown above as an Authorized redirect URI, then copy the Client ID and Client Secret into these fields. The redirect URI must match character-for-character, including https, www/non-www, /wp-admin/, and the query string.', 'tdl-chauffeur-calendar-sync' ) . '</li></ol></div>';
+		echo '<ol><li>' . esc_html__( 'Go to Google Cloud Console: https://console.cloud.google.com/', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Create or select a project.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Enable the Google Calendar API for that project.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Open APIs & Services > OAuth consent screen and configure/publish the consent screen.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Open APIs & Services > Credentials > Create Credentials > OAuth client ID.', 'tdl-chauffeur-calendar-sync' ) . '</li><li>' . esc_html__( 'Choose Web application, add the exact Redirect URI shown above as an Authorized redirect URI, then copy the Client ID and Client Secret from that same OAuth client into these fields. Error 401 invalid_client means the Client ID is wrong, deleted, belongs to another project, or is not an OAuth 2.0 Web application Client ID. Error 400 redirect_uri_mismatch means the redirect URI in this plugin and Google Cloud Console do not match character-for-character; make sure the URI includes tdl_ccs_google_callback=1.', 'tdl-chauffeur-calendar-sync' ) . '</li></ol></div>';
 		$this->submit_button( __( 'Save Google Settings', 'tdl-chauffeur-calendar-sync' ) );
 
 		echo '<table class="form-table">';
